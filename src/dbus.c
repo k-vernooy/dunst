@@ -528,6 +528,7 @@ static struct notification *dbus_message_to_notification(const gchar *sender, GV
         }
 
         GVariant *dict_value;
+        GVariant *icon_value = NULL;
 
         // First process the items that can be filtered on
         if ((dict_value = g_variant_lookup_value(hints, "urgency", G_VARIANT_TYPE_BYTE))) {
@@ -584,26 +585,45 @@ static struct notification *dbus_message_to_notification(const gchar *sender, GV
                 g_variant_unref(dict_value);
         }
 
-        dict_value = g_variant_lookup_value(hints, "image-data", G_VARIANT_TYPE("(iiibiiay)"));
-        if (!dict_value)
-                dict_value = g_variant_lookup_value(hints, "image_data", G_VARIANT_TYPE("(iiibiiay)"));
-        if (!dict_value)
-                dict_value = g_variant_lookup_value(hints, "icon_data", G_VARIANT_TYPE("(iiibiiay)"));
-        if (dict_value) {
-                notification_icon_replace_data(n, dict_value);
-                g_variant_unref(dict_value);
-        }
-
         if ((dict_value = g_variant_lookup_value(hints, "image-path", G_VARIANT_TYPE_STRING))) {
                 g_free(n->iconname);
                 n->iconname = g_variant_dup_string(dict_value, NULL);
                 g_variant_unref(dict_value);
         }
 
+        // Set raw icon data only after initializing the notification, so the
+        // desired icon size is known. This way the buffer can be immediately
+        // rescaled. If at some point you might want to match by if a
+        // notificaton has an image, this has to be reworked.
+        dict_value = g_variant_lookup_value(hints, "image-data", G_VARIANT_TYPE("(iiibiiay)"));
+        if (!dict_value)
+                dict_value = g_variant_lookup_value(hints, "image_data", G_VARIANT_TYPE("(iiibiiay)"));
+        if (!dict_value)
+                dict_value = g_variant_lookup_value(hints, "icon_data", G_VARIANT_TYPE("(iiibiiay)"));
+        if (dict_value) {
+                // Signal that the notification is still waiting for a raw
+                // icon. It cannot be set now, because min_icon_size and
+                // max_icon_size aren't known yet. It cannot be set later,
+                // because it has to be overwritten by the new_icon rule.
+                n->receiving_raw_icon = true;
+                icon_value = dict_value;
+                dict_value = NULL;
+        }
+
+        // Set the dbus timeout
+        if (timeout >= 0)
+                n->dbus_timeout = ((gint64)timeout) * 1000;
+
         // All attributes that have to be set before initializations are set,
         // so we can initialize the notification. This applies all rules that
         // are defined and applies the formatting to the message.
         notification_init(n);
+
+        if (icon_value) {
+                if (n->receiving_raw_icon)
+                        notification_icon_replace_data(n, icon_value);
+                g_variant_unref(icon_value);
+        }
 
         // Modify these values after the notification is initialized and all rules are applied.
         if ((dict_value = g_variant_lookup_value(hints, "fgcolor", G_VARIANT_TYPE_STRING))) {
@@ -628,9 +648,6 @@ static struct notification *dbus_message_to_notification(const gchar *sender, GV
                 n->colors.highlight = g_variant_dup_string(dict_value, NULL);
                 g_variant_unref(dict_value);
         }
-
-        if (timeout >= 0)
-                n->timeout = ((gint64)timeout) * 1000;
 
         g_variant_unref(hints);
         g_variant_type_free(required_type);

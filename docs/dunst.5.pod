@@ -58,6 +58,22 @@ keyboard focus.
 
 =back
 
+=item B<enable_posix_regex> (default: false)
+
+When set to true (recommended), you can use POSIX regular expressions for
+filtering rules. It uses the POSIX Extended Regular Expression syntax:
+https://en.m.wikibooks.org/wiki/Regular_Expressions/POSIX-Extended_Regular_Expressions.
+
+If this is set to false (not recommended), dunst will us fnmatch(3) for matching
+strings. Dunst doesn't pass any flags to fnmatch, so you cannot make use of
+extended patterns.
+
+The POSIX syntax is more powerful and will eventually become the default. The main
+differences between POSIX and fnmatch(3) is that POSIX uses ".*" for wildcards
+instead of "*" and POSIX allows for partial matches without needing wildcards.
+This means that the pattern "abc" will match all strings that contain "abc",
+like "abcdef".
+
 =item B<geometry> DEPRECATED
 
 This setting is deprecated and removed. It's split up into B<width>, B<height>, B<origin>,
@@ -120,8 +136,8 @@ Origin can be one of:
 =item B<offset> format: (horizontal, vertical)
 
 Respectively the horizontal and vertical offset in pixels from the corner
-of the screen specified by B<origin>. Both values should always be positive or
-zero.
+of the screen specified by B<origin>. A negative offset will lead to the
+notification being off screen.
 
 Examples:
         origin = top-right
@@ -141,6 +157,11 @@ needed. If 0 is specified, the scale factor is auto-detected.
 When an integer value is passed to dunst as a hint (see B<NOTIFY-SEND>), a
 progress bar will be drawn at the bottom of the notification. This
 behavior can be turned off by setting this setting to false.
+
+=item B<progress_bar_horizontal_alignment> (values: [left/center/right], default: center)
+
+Horizontal alignment of the progress bar. The progress bar will always keep a
+distance of B<horizontal_padding> from the edge of the notification.
 
 =item B<progress_bar_height> (default: 10)
 
@@ -185,7 +206,8 @@ This setting will only work if a compositor is running.
 =item B<separator_height> (default: 2)
 
 The height in pixels of the separator between notifications, if set to 0 there
-will be no separating line between notifications.
+will be no separating line between notifications. This setting will be ignored
+if B<gap_size> is greater than 0.
 
 =item B<padding> (default: 8)
 
@@ -219,7 +241,17 @@ is equivalent to
 Defines width in pixels of frame around the notification window. Set to 0 to
 disable.
 
-=item B<separator_color> (values: [auto/foreground/frame/#RRGGBB] default: auto)
+=item B<gap_size> (default: 0)
+
+Size of gap to display between notifications.
+
+If value is greater than 0, B<separator_height> will be ignored and a border
+of size B<frame_width> will be drawn around each notification instead.
+
+This setting requires a compositor and any applications displayed between the
+gaps are not currently clickable.
+
+=item B<separator_color> (values: [auto/foreground/frame/#RRGGBB] default: frame)
 
 Sets the color of the separator line between two notifications.
 
@@ -292,7 +324,7 @@ This options is parsed as a Pango font description.
 The amount of extra spacing between text lines in pixels. Set to 0 to
 disable.
 
-=item B<format> (default: "%s %b")
+=item B<format> (default: "<b>%s</b>\n%b")
 
 Specifies how the various attributes of the notification should be formatted on
 the notification window.
@@ -306,6 +338,9 @@ a literal newline.
 
 If any of the following strings are present, they will be replaced with the
 equivalent notification attribute.
+
+For a complete markup reference, see
+<https://docs.gtk.org/Pango/pango_markup.html>.
 
 =over 4
 
@@ -336,7 +371,7 @@ removed from the format.
 Defines how the text and icon should be aligned vertically within the
 notification. If icons are disabled, this option has no effect.
 
-=item B<show_age_threshold> (default: -1)
+=item B<show_age_threshold> (default: 60)
 
 Show age of message if message is older than this time.
 See TIME FORMAT for valid times.
@@ -364,36 +399,6 @@ Hide the count of stacked duplicate notifications.
 Show an indicator if a notification contains actions and/or open-able URLs. See
 ACTIONS below for further details.
 
-=item B<icon_position> (values: [left/right/off], default: off)
-
-Defines the position of the icon in the notification window. Setting it to off
-disables icons.
-
-=item B<min_icon_size> (default: 0)
-
-Defines the minimum size in pixels for the icons.
-If the icon is larger than or equal to the specified value it won't be affected.
-If it's smaller then it will be scaled up so that the smaller axis is equivalent
-to the specified size.
-
-Set to 0 to disable icon upscaling. (default)
-
-If B<icon_position> is set to off, this setting is ignored.
-
-=item B<max_icon_size> (default: 0)
-
-Defines the maximum size in pixels for the icons.
-If the icon is smaller than or equal to the specified value it won't be affected.
-If it's larger then it will be scaled down so that the larger axis is equivalent
-to the specified size.
-
-Set to 0 to disable icon downscaling. (default)
-
-If both B<min_icon_size> and B<max_icon_size> are enabled, the latter
-gets the last say.
-
-If B<icon_position> is set to off, this setting is ignored.
-
 =item B<icon_path> (default: "/usr/share/icons/gnome/16x16/status/:/usr/share/icons/gnome/16x16/devices/")
 
 Can be set to a colon-separated list of paths to search for icons to use with
@@ -403,7 +408,7 @@ Dunst doens't search outside of these direcories. For a recursive icon lookup
 system, see B<enable_recursive_icon_lookup>. This new system will eventually
 replace this and will need new settings.
 
-=item B<icon_theme> (default: "Adwaita", example: "Adwaita, breeze") I<Experimental>
+=item B<icon_theme> (default: "Adwaita", example: "Adwaita, breeze")
 
 Comma-separated of names of the the themes to use for looking up icons. This has
 to be the name of the directory in which the theme is located, not the
@@ -423,19 +428,17 @@ If the theme inherits from other themes, they will be used as a backup.
 This setting is experimental and not enabled by default. See
 B<enable_recursive_icon_lookup> for how to enable it.
 
-=item B<enable_recursive_icon_lookup> (default: false) I<Experimental>
+=item B<enable_recursive_icon_lookup> (default: false)
 
 This setting enables the new icon lookup method. This new system will eventually
 be the old icon lookup.
 
-Currently icons are looked up in the B<icon_path> and scaled according to
-B<min_icon_size> and B<max_icon_size>. Since the B<icon_path> wasn't recursive,
-one had to add a ton of paths to this list.
+Currently icons are looked up in the B<icon_path>. Since the B<icon_path> wasn't
+recursive, one had to add a ton of paths to this list.
 This has been drastically simplified by the new lookup method. Now you only have
-to set B<icon_theme> to the name of the theme and B<icon_size> to the icon size
-you want. To enable this new behaviour, set B<enable_recursive_icon_lookup> to
-true in the I<[experimental]> section. See the respective settings for more
-details.
+to set B<icon_theme> to the name of the theme you want. To enable this new
+behaviour, set B<enable_recursive_icon_lookup> to true in the I<[experimental]>
+section. See the respective settings for more details.
 
 =item B<sticky_history> (values: [true/false], default: true)
 
@@ -448,7 +451,7 @@ Maximum number of notifications that will be kept in history. After that limit
 is reached, older notifications will be deleted once a new one arrives. See
 HISTORY.
 
-=item B<dmenu> (default: "/usr/bin/dmenu")
+=item B<dmenu> (default: "/usr/bin/dmenu -p dunst")
 
 The command that will be run when opening the context menu. Should be either
 a dmenu command or a dmenu-compatible menu.
@@ -542,6 +545,37 @@ the notification sent before the user defined timeout.
 
 =back
 
+=head2 Keyboard shortcuts (X11 only)
+
+Keyboard shortcuts are defined in the following format: "Modifier+key" where the
+modifier is one of ctrl,mod1,mod2,mod3,mod4 and key is any keyboard key.
+
+Note that the keyboard shortcuts have been moved to the B<global> section of the
+config for consistency with other settings.
+
+Alternatively you can also define shortcuts inside your window manager and bind
+them to dunstctl(1) commands.
+
+=over 4
+
+=item B<close>
+
+Specifies the keyboard shortcut for closing a notification.
+
+=item B<close_all>
+
+Specifies the keyboard shortcut for closing all currently displayed notifications.
+
+=item B<history>
+
+Specifies the keyboard shortcut for recalling a single notification from history.
+
+=item B<context>
+
+Specifies the keyboard shortcut that opens the context menu.
+
+=back
+
 =head2 Urgency sections
 
 The urgency sections work in a similar way to rules and can be used to specify
@@ -554,11 +588,8 @@ normal and critical urgency respectively.
 
 See the example configuration file for examples.
 
-Additionally, you can override these settings via the following command line
-flags:
-
-Please note these flags may be removed in the future. See issue #328 in the bug
-tracker for discussions (See REPORTING BUGS).
+The flags for setting the colors notifications of different urgencies have been
+removed. See issue #328 in the bug tracker for discussions (See REPORTING BUGS).
 
 =over 4
 
@@ -570,31 +601,31 @@ recommended to replace it as soon as possible.
 
 Where I<icon> is a path to an image file containing the icon.
 
-=item B<-lf/nf/cf color>
+=item B<-lf/nf/cf color> REMOVED
 
 Defines the foreground color for low, normal and critical notifications respectively.
 
 See COLORS for the value format.
 
-=item B<-lb/nb/cb color>
+=item B<-lb/nb/cb color> REMOVED
 
 Defines the background color for low, normal and critical notifications respectively.
 
 See COLORS for the value format.
 
-=item B<-lh/nh/ch color>
+=item B<-lh/nh/ch color> REMOVED
 
 Defines the highlight color for low, normal and critical notifications respectively.
 
 See COLORS for the value format.
 
-=item B<-lfr/nfr/cfr color>
+=item B<-lfr/nfr/cfr color> REMOVED
 
 Defines the frame color for low, normal and critical notifications respectively.
 
 See COLORS for more information
 
-=item B<-lto/nto/cto secs>
+=item B<-lto/nto/cto secs> REMOVED
 
 Defines the timeout time for low, normal and critical notifications
 respectively.
@@ -680,7 +711,15 @@ rule, it may affect if it's being matched by a later rule.
 
 =item B<filtering>
 
-Notifications can be matched for any of the following attributes:
+With filtering rules you can match notifications to apply rules to only a subset
+of notifications.
+
+For filtering rules that filter based on strings you can use regular
+expressions. It's recommended to set B<enable_posix_regex> to true. You can then
+use the POSIX Extended Regular Expression syntax:
+https://en.m.wikibooks.org/wiki/Regular_Expressions/POSIX-Extended_Regular_Expressions.
+
+Notifications can be matched for any of the following attributes.
 
 =over 4
 
@@ -715,6 +754,13 @@ Match if the notification has been declared as transient by the client or by
 some other rule.
 
 See C<set_transient> for more details about this attribute.
+
+=item C<match_dbus_timeout>
+
+Matches the dbus timeout of the notification as set by the client or by some
+other rule.
+
+See C<override_dbus_timeout> for more details about this attribute.
 
 =item C<msg_urgency>
 
@@ -803,11 +849,43 @@ Wayland.
 
 Default: show
 
+=item B<min_icon_size> (default: 32)
+
+Defines the minimum size in pixels for the icons.
+If the icon is larger than or equal to the specified value it won't be affected.
+If it's smaller then it will be scaled up so that the smaller axis is equivalent
+to the specified size.
+
+When using recursive icon lookup (see B<enable_recursive_icon_lookup>), all
+icons from a theme will be this size.
+
+If B<icon_position> is set to off, this setting is ignored.
+
+=item B<max_icon_size> (default: 128)
+
+Defines the maximum size in pixels for the icons.
+If the icon is smaller than or equal to the specified value it won't be affected.
+If it's larger then it will be scaled down so that the larger axis is equivalent
+to the specified size.
+
+Set to 0 to disable icon downscaling.
+
+If both B<min_icon_size> and B<max_icon_size> are enabled, the latter
+gets the last say.
+
+If B<icon_position> is set to off, this setting is ignored.
+
+
 =item C<new_icon>
 
 Updates the icon of the notification, it should be a path or a name for a valid
 image. This overrides the icon that was sent with dunstify or another notification
 tool.
+
+=item C<icon_position> (values: [left/right/top/off], default: left)
+
+Defines the position of the icon in the notification window. Setting it to off
+disables icons.
 
 =item C<default_icon>
 
@@ -843,6 +921,11 @@ for a list of standard categories.
 =item C<timeout>
 
 Equivalent to the C<timeout> setting in the urgency sections.
+
+=item C<override_dbus_timeout>
+
+Overrides the timeout specified in dbus.
+This takes precedence over C<timeout>.
 
 =item C<urgency>
 
@@ -883,6 +966,13 @@ Specifies where truncated lines should be ellipsized.
 =item B<alignment> (values: [left/center/right], default: left)
 
 Defines how the text should be aligned within the notification.
+
+=item B<hide_text> (values: [true/false], default: false)
+
+Setting this to true will skip displaying any text related to the notification.
+The notification icon and progress bar will still be displayed. This option may
+be useful for notifications where an icon or progress bar may be sufficient
+information for the notification, such as audio volume or brightness level.
 
 =item B<markup> (values: [full/strip/no], default: no)
 
@@ -926,17 +1016,6 @@ plain text. Dunst will not advertise that it can parse markup if this is set as
 a global setting.
 
 =back
-
-=item B<icon_size> (default: 32) I<Experimental>
-
-The size of the icon in pixels. This is commonly a multiple of 2, for example:
-16, 32 or 64. This size is used for searching the right icon in B<icon_theme>.
-If no icon of the right size can be found, no icon is displayed. When passing a
-full icon path to dunst the icon will be used even when it's not the right
-size. The icon is then scaled to be of size B<icon_size>.
-
-This setting is experimental and not enabled by default. See
-B<enable_recursive_icon_lookup> for how to enable it.
 
 =back
 
@@ -1077,12 +1156,6 @@ given, seconds ("s") is taken as default.
 Time units understood by dunst are "ms", "s", "m", "h" and "d".
 
 Example time: "1000ms" "10m"
-
-=head1 MISCELLANEOUS
-
-Dunst used to provide shortcuts to act on notifications via key-bindings, but it
-has now been moved to its own utility. For more information, see the manual for
-dunstctl(1).
 
 =head1 AUTHORS
 

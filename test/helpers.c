@@ -34,7 +34,7 @@ GVariant *notification_setup_raw_image(const char *path)
         return hint;
 }
 
-struct notification *test_notification(const char *name, gint64 timeout)
+struct notification *test_notification_uninitialized(const char *name)
 {
         struct notification *n = notification_create();
 
@@ -42,6 +42,13 @@ struct notification *test_notification(const char *name, gint64 timeout)
         n->appname =     g_strconcat("app of ", name, NULL);
         n->summary =     g_strconcat(name, NULL);
         n->body =        g_strconcat("See, ", name, ", I've got a body for you!", NULL);
+
+        return n;
+}
+
+struct notification *test_notification(const char *name, gint64 timeout)
+{
+        struct notification *n = test_notification_uninitialized(name);
 
         notification_init(n);
 
@@ -58,6 +65,28 @@ struct notification *test_notification_with_icon(const char *name, gint64 timeou
         struct notification *n = test_notification(name, timeout);
         n->icon = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
         return n;
+}
+
+GSList *get_dummy_notifications(int count)
+{
+        GSList *notifications = NULL;
+
+        int message_size = 24;
+        for (int i = 0; i < count; i++) {
+                char msg[message_size];
+                snprintf(msg, message_size, "test %d", i);
+                struct notification *n = test_notification(msg, 10);
+                n->icon_position = ICON_LEFT;
+                n->text_to_render = g_strdup("dummy layout");
+                notifications = g_slist_append(notifications, n);
+        }
+        return notifications;
+}
+
+void free_dummy_notification(void *notification)
+{
+        // wrapper function to work with g_slist_free_full
+        notification_unref((struct notification *) notification);
 }
 
 /* vim: set tabstop=8 shiftwidth=8 expandtab textwidth=0: */

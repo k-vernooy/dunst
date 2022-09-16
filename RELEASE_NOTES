@@ -1,4 +1,39 @@
 ===================================================================================
+Release Notes For v1.9.0
+===================================================================================
+
+This release marks the point for a few big features to be useable. The
+recursive icon lookup is marked stable and is used by default for new users. It
+is now also possible to add gaps between notifications, although it is not done
+with separate windows, so clicks in between notification will not register to
+the below window. You'll also need a compositor for the transparancy to take
+effect.
+
+Take a look at the changelog for a more detailed change description.
+
+===================================================================================
+Release Notes For v1.8.0
+===================================================================================
+
+Lots of exciting and useful features are being added to dunst, all while making
+dunst even more configurable and reliable.
+
+For users:
+
+This release re-adds the keyboard shortcuts for those who have been missing
+them. Also, support for drop-in files has been implemented. Files placed in
+dunstrc.d/*.conf will be read after the main dunstrc. This may be useful for
+theming (with pywal or otherwise). In the future we will add example drop-in
+files for different default themes and special configuration.
+
+For maintainers:
+
+Not much has been changed for maintainers. Maybe you'll find the drop-in files
+useful for distro-specific fixes. Note that only the files in the directory of
+the used dunstrc will be read (see dunst(1) for documentation).
+
+
+===================================================================================
 Release Notes For v1.7.0
 ===================================================================================
 

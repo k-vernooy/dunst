@@ -13,11 +13,6 @@
 #include "utils.h"
 #include "icon-lookup.h"
 
-static bool is_readable_file(const char *filename)
-{
-        return (access(filename, R_OK) != -1);
-}
-
 /**
  * Reassemble the data parts of a GdkPixbuf into a cairo_surface_t's data field.
  *
@@ -98,7 +93,9 @@ int get_icon_height(cairo_surface_t *icon, double scale) {
 
 cairo_surface_t *gdk_pixbuf_to_cairo_surface(GdkPixbuf *pixbuf)
 {
-        assert(pixbuf);
+        if (!pixbuf) {
+                return NULL;
+        }
 
         int width  = gdk_pixbuf_get_width(pixbuf);
         int height = gdk_pixbuf_get_height(pixbuf);
@@ -125,21 +122,23 @@ cairo_surface_t *gdk_pixbuf_to_cairo_surface(GdkPixbuf *pixbuf)
  *
  * @param w a pointer to the image width, to be modified in-place
  * @param h a pointer to the image height, to be modified in-place
+ * @param min_size the minimum icon size setting for this notification
+ * @param max_size the maximum icon size setting for this notification
  * @return TRUE if the dimensions were updated, FALSE if they were left unchanged
  */
-static bool icon_size_clamp(int *w, int *h) {
+static bool icon_size_clamp(int *w, int *h, int min_size, int max_size) {
         int _w = *w, _h = *h;
         int landscape = _w > _h;
         int orig_larger = landscape ? _w : _h;
         double larger = orig_larger;
         double smaller = landscape ? _h : _w;
-        if (settings.min_icon_size && smaller < settings.min_icon_size) {
-                larger = larger / smaller * settings.min_icon_size;
-                smaller = settings.min_icon_size;
+        if (min_size && smaller < min_size) {
+                larger = larger / smaller * min_size;
+                smaller = min_size;
         }
-        if (settings.max_icon_size && larger > settings.max_icon_size) {
-                smaller = smaller / larger * settings.max_icon_size;
-                larger = settings.max_icon_size;
+        if (max_size && larger > max_size) {
+                smaller = smaller / larger * max_size;
+                larger = max_size;
         }
         if ((int) larger != orig_larger) {
                 *w = (int) (landscape ? larger : smaller);
@@ -150,39 +149,41 @@ static bool icon_size_clamp(int *w, int *h) {
 }
 
 /**
- * Scales the given GdkPixbuf if necessary according to the settings.
+ * Scales the given GdkPixbuf to a given size.. If the image is not square, the
+ * largest size will be scaled up to the given size.
  *
  * @param pixbuf (nullable) The pixbuf, which may be too big.
  *                          Takes ownership of the reference.
- * @param dpi_scale An integer for the dpi scaling. That doesn't mean the icon
- *                  is always scaled by dpi_scale.
+ * @param dpi_scale A double for the dpi scaling.
+ * @param min_size The minimum allowed icon size.
+ * @param max_size The maximum allowed icon size.
  * @return the scaled version of the pixbuf. If scaling wasn't
  *         necessary, it returns the same pixbuf. Transfers full
  *         ownership of the reference.
  */
-static GdkPixbuf *icon_pixbuf_scale(GdkPixbuf *pixbuf, double dpi_scale)
+static GdkPixbuf *icon_pixbuf_scale_to_size(GdkPixbuf *pixbuf, double dpi_scale, int min_size, int max_size)
 {
         ASSERT_OR_RET(pixbuf, NULL);
 
         int w = gdk_pixbuf_get_width(pixbuf);
         int h = gdk_pixbuf_get_height(pixbuf);
 
-
         // TODO immediately rescale icon upon scale changes
-        if (icon_size_clamp(&w, &h)) {
-                GdkPixbuf *scaled = gdk_pixbuf_scale_simple(
-                                pixbuf,
-                                round(w * dpi_scale),
-                                round(h * dpi_scale),
-                                GDK_INTERP_BILINEAR);
-                g_object_unref(pixbuf);
-                pixbuf = scaled;
+        if(icon_size_clamp(&w, &h, min_size, max_size)) {
+                w = round(w * dpi_scale);
+                h = round(h * dpi_scale);
         }
-
+        GdkPixbuf *scaled = gdk_pixbuf_scale_simple(
+                        pixbuf,
+                        w,
+                        h,
+                        GDK_INTERP_BILINEAR);
+        g_object_unref(pixbuf);
+        pixbuf = scaled;
         return pixbuf;
 }
 
-GdkPixbuf *get_pixbuf_from_file(const char *filename, double scale)
+GdkPixbuf *get_pixbuf_from_file(const char *filename, int min_size, int max_size, double scale)
 {
         char *path = string_to_path(g_strdup(filename));
         GError *error = NULL;
@@ -193,13 +194,14 @@ GdkPixbuf *get_pixbuf_from_file(const char *filename, double scale)
                 g_free(path);
                 return NULL;
         }
+        GdkPixbuf *pixbuf = NULL;
         // TODO immediately rescale icon upon scale changes
-        icon_size_clamp(&w, &h);
-        GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file_at_scale(path,
-                                                              round(w * scale),
-                                                              round(h * scale),
-                                                              TRUE,
-                                                              &error);
+        icon_size_clamp(&w, &h, min_size, max_size);
+        pixbuf = gdk_pixbuf_new_from_file_at_scale(path,
+                        round(w * scale),
+                        round(h * scale),
+                        TRUE,
+                        &error);
 
         if (error) {
                 LOG_W("%s", error->message);
@@ -213,7 +215,9 @@ GdkPixbuf *get_pixbuf_from_file(const char *filename, double scale)
 char *get_path_from_icon_name(const char *iconname, int size)
 {
         if (settings.enable_recursive_icon_lookup) {
-                return find_icon_path(iconname, size);
+                char *path = find_icon_path(iconname, size);
+                LOG_I("Found icon at %s", path);
+                return path;
         }
         if (STR_EMPTY(iconname))
                 return NULL;
@@ -268,7 +272,7 @@ char *get_path_from_icon_name(const char *iconname, int size)
         return new_name;
 }
 
-GdkPixbuf *icon_get_for_data(GVariant *data, char **id, double dpi_scale)
+GdkPixbuf *icon_get_for_data(GVariant *data, char **id, double dpi_scale, int min_size, int max_size)
 {
         ASSERT_OR_RET(data, NULL);
         ASSERT_OR_RET(id, NULL);
@@ -378,7 +382,7 @@ GdkPixbuf *icon_get_for_data(GVariant *data, char **id, double dpi_scale)
         g_free(data_chk);
         g_variant_unref(data_variant);
 
-        pixbuf = icon_pixbuf_scale(pixbuf, dpi_scale);
+        pixbuf = icon_pixbuf_scale_to_size(pixbuf, dpi_scale, min_size, max_size);
 
         return pixbuf;
 }

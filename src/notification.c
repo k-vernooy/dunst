@@ -216,7 +216,7 @@ bool notification_is_duplicate(const struct notification *a, const struct notifi
         return STR_EQ(a->appname, b->appname)
             && STR_EQ(a->summary, b->summary)
             && STR_EQ(a->body, b->body)
-            && (settings.icon_position != ICON_OFF ? STR_EQ(a->icon_id, b->icon_id) : 1)
+            && (a->icon_position != ICON_OFF ? STR_EQ(a->icon_id, b->icon_id) : 1)
             && a->urgency == b->urgency;
 }
 
@@ -337,9 +337,11 @@ void notification_icon_replace_path(struct notification *n, const char *new_icon
         g_clear_pointer(&n->icon_id, g_free);
 
         g_free(n->icon_path);
-        n->icon_path = get_path_from_icon_name(new_icon, n->icon_size);
+        n->icon_path = get_path_from_icon_name(new_icon, n->min_icon_size);
         if (n->icon_path) {
-                GdkPixbuf *pixbuf = get_pixbuf_from_file(n->icon_path, draw_get_scale());
+                GdkPixbuf *pixbuf = get_pixbuf_from_file(n->icon_path,
+                                n->min_icon_size, n->max_icon_size,
+                                draw_get_scale());
                 if (pixbuf) {
                         n->icon = gdk_pixbuf_to_cairo_surface(pixbuf);
                         g_object_unref(pixbuf);
@@ -358,9 +360,11 @@ void notification_icon_replace_data(struct notification *n, GVariant *new_icon)
         n->icon = NULL;
         g_clear_pointer(&n->icon_id, g_free);
 
-        GdkPixbuf *icon = icon_get_for_data(new_icon, &n->icon_id, draw_get_scale());
+        GdkPixbuf *icon = icon_get_for_data(new_icon, &n->icon_id,
+                        draw_get_scale(), n->min_icon_size, n->max_icon_size);
         n->icon = gdk_pixbuf_to_cairo_surface(icon);
-        g_object_unref(icon);
+        if (icon)
+                g_object_unref(icon);
 }
 
 /* see notification.h */
@@ -411,13 +415,19 @@ struct notification *notification_create(void)
 
         n->urgency = URG_NORM;
         n->timeout = -1;
+        n->dbus_timeout = -1;
 
         n->transient = false;
         n->progress = -1;
         n->word_wrap = true;
         n->ellipsize = PANGO_ELLIPSIZE_MIDDLE;
         n->alignment = PANGO_ALIGN_LEFT;
-        n->icon_size = 32;
+        n->progress_bar_alignment = PANGO_ALIGN_CENTER;
+        n->hide_text = false;
+        n->icon_position = ICON_LEFT;
+        n->min_icon_size = 32;
+        n->max_icon_size = 32;
+        n->receiving_raw_icon = false;
 
         n->script_run = false;
         n->dbus_valid = false;
@@ -500,6 +510,11 @@ void notification_init(struct notification *n)
         /* UPDATE derived fields */
         notification_extract_urls(n);
         notification_format_message(n);
+
+        /* Update timeout: dbus_timeout has priority over timeout */
+        if (n->dbus_timeout >= 0)
+                n->timeout = n->dbus_timeout;
+
 }
 
 static void notification_format_message(struct notification *n)

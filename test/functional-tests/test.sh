@@ -157,6 +157,16 @@ function test_height {
     keypress
 }
 
+function test_progress_bar_alignment {
+    tmp_dunstrc dunstrc.default "progress_bar_horizontal_alignment = $1\n progress_bar_max_width = 200"
+    start_dunst dunstrc.tmp
+    ../../dunstify -a "dunst tester" -u c "alignment = $1"
+    ../../dunstify -h int:value:33 -a "dunst tester" -u n "The progress bar should not be the entire width"
+    ../../dunstify -h int:value:33 -a "dunst tester" -u c "Short"
+    rm dunstrc.tmp
+    keypress
+}
+
 function height {
     echo "###################################"
     echo "height"
@@ -186,6 +196,85 @@ function progress_bar {
     ../../dunstify -h int:value:33 -a "dunst tester" -u n "You might also notice height and frame size are changed"
     ../../dunstify -h int:value:33 -a "dunst tester" -u c "Short"
     keypress
+    test_progress_bar_alignment "left"
+    test_progress_bar_alignment "center"
+    test_progress_bar_alignment "right"
+}
+
+function icon_position {
+    padding_cases=(
+        '0 0 0 no padding'
+        '15 1 1 vertical'
+        '1 50 1 horizontal'
+        '1 1 25 icon '
+    )
+
+    for padding_case in "${padding_cases[@]}"; do
+        read vertical horizontal icon label <<<"$padding_case"
+
+        padding_settings="
+            padding = $vertical
+            horizontal_padding = $horizontal
+            text_icon_padding = $icon
+        "
+
+        tmp_dunstrc dunstrc.icon_position "$padding_settings"
+        start_dunst dunstrc.tmp
+
+        for position in left top right off; do
+            for alignment in left center right; do
+                category="icon-$position-alignment-$alignment"
+                ../../dunstify -a "dunst tester" --hints string:category:$category -u n "$category"$'\n'"padding emphasis: $label"
+            done
+        done
+        rm dunstrc.tmp
+        keypress
+    done
+}
+
+function hide_text {
+    start_dunst dunstrc.hide_text
+    ../../dunstify -a "dunst tester" -u c "text not hidden" "You should be able to read me!\nThe next notifications should not have any text."
+    local hidden_body="If you can read me then hide_text is not working."
+    ../../dunstify -a "dunst tester" -u l "text hidden" "$hidden_body"
+    ../../dunstify -a "dunst tester" -h int:value:$((RANDOM%100)) -u l "text hidden + progress bar" "$hidden_body"
+    ../../dunstify -a "dunst tester" -u n "text hidden + icon" "$hidden_body"
+    ../../dunstify -a "dunst tester" -h int:value:$((RANDOM%100)) -u n "text hidden + icon + progress bar" "$hidden_body"
+    keypress
+}
+
+function gaps {
+    echo "###################################"
+    echo "gaps"
+    echo "###################################"
+    start_dunst dunstrc.gaps
+    CHOICE=$(../../dunstify -a "dunst tester" -A "default,Default" -A "optional,Optional" "Click #1" -u l) \
+        && echo Clicked $CHOICE for \#1 &
+    CHOICE=$(../../dunstify -a "dunst tester" -A "default,Default" -A "optional,Optional" "Click #2" -u n) \
+        && echo Clicked $CHOICE for \#2 &
+    CHOICE=$(../../dunstify -a "dunst tester" -A "default,Default" -A "optional,Optional" "Click #3" -u c) \
+        && echo Clicked $CHOICE for \#3 &
+    CHOICE=$(../../dunstify -a "dunst tester" -A "default,Default" -A "optional,Optional" "Click #4" -u l) \
+        && echo Clicked $CHOICE for \#4 &
+    CHOICE=$(../../dunstify -a "dunst tester" -A "default,Default" -A "optional,Optional" "Click #5" -u n) \
+        && echo Clicked $CHOICE for \#5 &
+    CHOICE=$(../../dunstify -a "dunst tester" -A "default,Default" -A "optional,Optional" "Click #6" -u c) \
+        && echo Clicked $CHOICE for \#6 &
+    keypress
+}
+
+function separator_click {
+    echo "###################################"
+    echo "separator_click"
+    echo "###################################"
+    start_dunst dunstrc.separator_click
+    CHOICE=$(../../dunstify -a "dunst tester" -A "default,Default" -A "optional,Optional" "Click #1" -u l) \
+        && echo Clicked $CHOICE for \#1 &
+    CHOICE=$(../../dunstify -a "dunst tester" -A "default,Default" -A "optional,Optional" "Click #2" -u c) \
+        && echo Clicked $CHOICE for \#2 &
+    CHOICE=$(../../dunstify -a "dunst tester" -A "default,Default" -A "optional,Optional" "Click #3" -u n) \
+        && echo Clicked $CHOICE for \#3 &
+    keypress
 }
 
 if [ -n "$1" ]; then
@@ -204,6 +293,10 @@ else
     replace
     markup
     progress_bar
+    icon_position
+    hide_text
+    gaps
+    separator_click
 fi
 
 killall dunst

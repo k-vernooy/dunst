@@ -48,9 +48,9 @@ TEST test_notification_is_duplicate(void)
         ASSERTm("One of the notifications got corrupted during test",
                 notification_is_duplicate(a, b));
 
-        enum icon_position icon_setting_tmp = settings.icon_position;
+        enum icon_position icon_setting_tmp = a->icon_position;
 
-        settings.icon_position = ICON_OFF;
+        a->icon_position = ICON_OFF;
         ASSERT(notification_is_duplicate(a, b));
         //Setting pointer to a random value since we are checking for null
         char *icon_id = b->icon_id;
@@ -59,13 +59,15 @@ TEST test_notification_is_duplicate(void)
                 notification_is_duplicate(a, b));
         b->icon_id = icon_id;
 
-        settings.icon_position = ICON_LEFT;
+        a->icon_position = ICON_LEFT;
+        b->icon_position = ICON_LEFT;
         CHECK_CALL(test_notification_is_duplicate_field(&(b->icon_id), a, b));
 
-        settings.icon_position = ICON_RIGHT;
+        a->icon_position = ICON_RIGHT;
+        b->icon_position = ICON_RIGHT;
         CHECK_CALL(test_notification_is_duplicate_field(&(b->icon_id), a, b));
 
-        settings.icon_position = icon_setting_tmp;
+        a->icon_position = icon_setting_tmp;
 
         ASSERT(notification_is_duplicate(a, b));
 
@@ -135,11 +137,9 @@ static struct notification *notification_load_icon_with_scaling(int min_icon_siz
 
         GVariant *rawIcon = notification_setup_raw_image(path);
 
-        settings.min_icon_size = min_icon_size;
-        settings.max_icon_size = max_icon_size;
+        n->min_icon_size = min_icon_size;
+        n->max_icon_size = max_icon_size;
         notification_icon_replace_data(n, rawIcon);
-        settings.min_icon_size = 0;
-        settings.max_icon_size = 0;
 
         g_variant_unref(rawIcon);
         g_free(path);

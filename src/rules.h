@@ -26,9 +26,11 @@ struct rule {
         char *stack_tag;
         char *desktop_entry;
         int msg_urgency;
+        gint64 match_dbus_timeout;
 
         /* modifying */
         gint64 timeout; // this has to be the first modifying rule
+        gint64 override_dbus_timeout;
         enum urgency urgency;
         char *action_name;
         enum markup_mode markup;
@@ -39,7 +41,10 @@ struct rule {
         int word_wrap;
         int ellipsize;
         int alignment;
-        int set_icon_size;
+        int hide_text;
+        int icon_position;
+        int min_icon_size;
+        int max_icon_size;
         char *new_icon;
         char *fg;
         char *bg;
@@ -50,8 +55,9 @@ struct rule {
         const char *format;
         const char *script;
         enum behavior_fullscreen fullscreen;
-        char *set_stack_tag; // this has to be the last action
         bool enabled;
+        int progress_bar_alignment;
+        char *set_stack_tag; // this has to be the last modifying rule
 };
 
 extern GSList *rules;

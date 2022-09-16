@@ -14,7 +14,6 @@
 #define LIST_END (-1)
 
 enum alignment { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
-enum icon_position { ICON_LEFT, ICON_RIGHT, ICON_OFF };
 enum vertical_alignment { VERTICAL_TOP, VERTICAL_CENTER, VERTICAL_BOTTOM };
 enum separator_color { SEP_FOREGROUND, SEP_AUTO, SEP_FRAME, SEP_CUSTOM };
 enum follow_mode { FOLLOW_NONE, FOLLOW_MOUSE, FOLLOW_KEYBOARD };
@@ -127,12 +126,10 @@ struct settings {
         char **dmenu_cmd;
         char *browser;
         char **browser_cmd;
-        enum icon_position icon_position;
         enum vertical_alignment vertical_alignment;
-        int min_icon_size;
-        int max_icon_size;
         char **icon_theme; // experimental
         bool enable_recursive_icon_lookup; // experimental
+        bool enable_regex; // experimental
         char *icon_path;
         enum follow_mode f_mode;
         bool always_run_script;
@@ -157,11 +154,12 @@ struct settings {
         int height;
         struct position offset;
         int notification_limit;
+        int gap_size;
 };
 
 extern struct settings settings;
 
-void load_settings(char *cmdline_config_path);
+void load_settings(const char * const path);
 
 #endif
 /* vim: set ft=c tabstop=8 shiftwidth=8 expandtab textwidth=0: */

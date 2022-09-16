@@ -96,27 +96,65 @@ struct setting {
        *        .rule_offset = offsetof(struct rule, *member*);
        */
       size_t rule_offset;
+
+      /**
+       * True if a setting has a different default in the default dunstrc.
+       * This is useful to transition a default value without breaking exisitng
+       * configs. This value is needed for the test suite to skip testing this
+       * setting against the default dunstrc.
+       *
+       * False by default.
+       */
+      bool different_default;
 };
+
+
+/*
+ *   How to add/change a rule
+ *   ------------------------
+ * 
+ * - Add variable to `struct rules` in `rules.h` (make sure to read the comment
+ *   at the top of the struct)
+ * - Add variable to to `struct notification` in `notification.h`
+ * - Apply the rule in `rule_apply` in `rules.c`
+ * - Change the listing in `settings_data.h` (make sure to move it to the other
+ *   rule listings for clarity)
+ * - Add the default rule value in `settings_data.h` (usually -1 or NULL)
+ * - Set default value in notification.c (`notification_create`). This is where
+ *   the real default is set.
+ * - Free the variable in `notification.c` if dynamically allocated.
+ * - Free the variable in `rules.c` if dynamically allocated.
+ * - Remove the setting from the global settings struct in `settings.h`.
+ * - Actually use the new setting.
+ * - Update the documentation
+ * - Test that it works
+ *
+ *   An example of making a setting a rule can be found in commit edc6f5a8c7a51a56b591cfa72618a43adc7b8d11
+ */
 
 static const struct rule empty_rule = {
         .name            = "empty",
         .appname         = NULL,
+        .action_name     = NULL,
         .summary         = NULL,
         .body            = NULL,
         .icon            = NULL,
         .category        = NULL,
         .msg_urgency     = URG_NONE,
+        .match_dbus_timeout = -1,
         .timeout         = -1,
+        .override_dbus_timeout       = -1,
         .urgency         = URG_NONE,
         .markup          = MARKUP_NULL,
         .history_ignore  = -1,
         .match_transient = -1,
         .set_transient   = -1,
-        .set_icon_size   = -1,
+        .icon_position   = -1,
         .skip_display    = -1,
         .word_wrap       = -1,
         .ellipsize       = -1,
         .alignment       = -1,
+        .hide_text       = -1,
         .new_icon        = NULL,
         .fg              = NULL,
         .bg              = NULL,
@@ -124,6 +162,9 @@ static const struct rule empty_rule = {
         .default_icon    = NULL,
         .script          = NULL,
         .enabled         = true,
+        .progress_bar_alignment   = -1,
+        .min_icon_size   = -1,
+        .max_icon_size   = -1,
 };
 
 
@@ -212,6 +253,7 @@ static const struct string_to_enum_def fullscreen_enum_data[] = {
 static const struct string_to_enum_def icon_position_enum_data[] = {
         {"left",  ICON_LEFT },
         {"right", ICON_RIGHT },
+        {"top",   ICON_TOP },
         {"off",   ICON_OFF },
         ENUM_END,
 };
@@ -387,6 +429,17 @@ static const struct setting allowed_settings[] = {
                 .rule_offset = offsetof(struct rule, msg_urgency),
         },
         {
+                .name = "match_dbus_timeout",
+                .section = "*",
+                .description = "Matches the dbus_timeout of the notification",
+                .type = TYPE_TIME,
+                .default_value = "*",
+                .value = NULL,
+                .parser = NULL,
+                .parser_data = NULL,
+                .rule_offset = offsetof(struct rule, match_dbus_timeout),
+        },
+        {
                 .name = "stack_tag",
                 .section = "*",
                 .description = "Matches the stack tag of the notification as set by the client or by some other rule.",
@@ -431,6 +484,17 @@ static const struct setting allowed_settings[] = {
                 .parser = NULL,
                 .parser_data = NULL,
                 .rule_offset = offsetof(struct rule, bg),
+        },
+        {
+                .name = "action_name",
+                .section = "*",
+                .description = "Sets the name of the action to be invoked on do_action.",
+                .type = TYPE_STRING,
+                .default_value = "*",
+                .value = NULL,
+                .parser = NULL,
+                .parser_data = NULL,
+                .rule_offset = offsetof(struct rule, action_name),
         },
         {
                 .name = "foreground",
@@ -543,6 +607,17 @@ static const struct setting allowed_settings[] = {
                 .rule_offset = offsetof(struct rule, timeout),
         },
         {
+                .name = "override_dbus_timeout",
+                .section = "*",
+                .description = "Replace the dbus timeout with this value.",
+                .type = TYPE_TIME,
+                .default_value = "*",
+                .value = NULL,
+                .parser = NULL,
+                .parser_data = NULL,
+                .rule_offset = offsetof(struct rule, override_dbus_timeout),
+        },
+        {
                 .name = "urgency",
                 .section = "*",
                 .description = "This sets the notification urgency.",
@@ -609,6 +684,17 @@ static const struct setting allowed_settings[] = {
                 .rule_offset = offsetof(struct rule, alignment),
         },
         {
+                .name = "hide_text",
+                .section = "*",
+                .description = "Skip rendering summary and body text in notification window (keeps icon and progress bar)",
+                .type = TYPE_CUSTOM,
+                .default_value = "*",
+                .value = NULL,
+                .parser = string_parse_enum,
+                .parser_data = boolean_enum_data,
+                .rule_offset = offsetof(struct rule, hide_text),
+        },
+        {
                 .name = "markup",
                 .section = "*",
                 .description = "Specify how markup should be handled",
@@ -620,15 +706,15 @@ static const struct setting allowed_settings[] = {
                 .rule_offset = offsetof(struct rule, markup),
         },
         {
-                .name = "icon_size",
+                .name = "icon_position",
                 .section = "*",
-                .description = "Set the size of the icon",
-                .type = TYPE_INT,
+                .description = "Align icons left/right/top/off",
+                .type = TYPE_CUSTOM,
                 .default_value = "*",
                 .value = NULL,
-                .parser = NULL,
-                .parser_data = NULL,
-                .rule_offset = offsetof(struct rule, set_icon_size),
+                .parser = string_parse_enum,
+                .parser_data = icon_position_enum_data,
+                .rule_offset = offsetof(struct rule, icon_position),
         },
         {
                 .name = "enabled",
@@ -640,6 +726,39 @@ static const struct setting allowed_settings[] = {
                 .parser = string_parse_bool,
                 .parser_data = boolean_enum_data,
                 .rule_offset = offsetof(struct rule, enabled),
+        },
+        {
+                .name = "progress_bar_horizontal_alignment",
+                .section = "*",
+                .description = "Set the horizontal alignment of the progress bar",
+                .type = TYPE_CUSTOM,
+                .default_value = "center",
+                .value = NULL,
+                .parser = string_parse_enum,
+                .parser_data = horizontal_alignment_enum_data,
+                .rule_offset = offsetof(struct rule, progress_bar_alignment),
+        },
+        {
+                .name = "min_icon_size",
+                .section = "global",
+                .description = "Scale smaller icons up to this size, set to 0 to disable. If max_icon_size also specified, that has the final say.",
+                .type = TYPE_INT,
+                .default_value = "*",
+                .value = NULL,
+                .parser = NULL,
+                .parser_data = NULL,
+                .rule_offset = offsetof(struct rule, min_icon_size),
+        },
+        {
+                .name = "max_icon_size",
+                .section = "global",
+                .description = "Scale larger icons down to this size, set to 0 to disable",
+                .type = TYPE_INT,
+                .default_value = "*",
+                .value = NULL,
+                .parser = NULL,
+                .parser_data = NULL,
+                .rule_offset = offsetof(struct rule, max_icon_size),
         },
         // end of modifying rules
 
@@ -986,26 +1105,6 @@ static const struct setting allowed_settings[] = {
                 .parser_data = &settings.browser_cmd,
         },
         {
-                .name = "min_icon_size",
-                .section = "global",
-                .description = "Scale smaller icons up to this size, set to 0 to disable. If max_icon_size also specified, that has the final say.",
-                .type = TYPE_INT,
-                .default_value = "0",
-                .value = &settings.min_icon_size,
-                .parser = NULL,
-                .parser_data = NULL,
-        },
-        {
-                .name = "max_icon_size",
-                .section = "global",
-                .description = "Scale larger icons down to this size, set to 0 to disable",
-                .type = TYPE_INT,
-                .default_value = "32",
-                .value = &settings.max_icon_size,
-                .parser = NULL,
-                .parser_data = NULL,
-        },
-        {
                 .name = "always_run_script",
                 .section = "global",
                 .description = "Always run rule-defined scripts, even if the notification is suppressed with format = \"\".",
@@ -1045,16 +1144,6 @@ static const struct setting allowed_settings[] = {
                 .value = &settings.sep_color,
                 .parser = string_parse_sepcolor,
                 .parser_data = sep_color_enum_data,
-        },
-        {
-                .name = "icon_position",
-                .section = "global",
-                .description = "Align icons left/right/off",
-                .type = TYPE_CUSTOM,
-                .default_value = "left",
-                .value = &settings.icon_position,
-                .parser = string_parse_enum,
-                .parser_data = icon_position_enum_data,
         },
         {
                 .name = "vertical_alignment",
@@ -1133,6 +1222,17 @@ static const struct setting allowed_settings[] = {
                 .type = TYPE_CUSTOM,
                 .default_value = "false",
                 .value = &settings.enable_recursive_icon_lookup,
+                .parser = string_parse_bool,
+                .parser_data = boolean_enum_data,
+                .different_default = true,
+        },
+        {
+                .name = "enable_posix_regex",
+                .section = "global",
+                .description = "Enable POSIX regex for filtering rules",
+                .type = TYPE_CUSTOM,
+                .default_value = "false",
+                .value = &settings.enable_regex,
                 .parser = string_parse_bool,
                 .parser_data = boolean_enum_data,
         },
@@ -1351,6 +1451,57 @@ static const struct setting allowed_settings[] = {
                 .parser_data = NULL,
         },
 
+        // Keyboard shortcuts (still in global section)
+        {
+                .name = "close",
+                .section = "global",
+                .description = "Shortcut for closing one notification",
+                .type = TYPE_STRING,
+                .default_value = "none",
+                .value = &settings.close_ks.str,
+                .parser = NULL,
+                .parser_data = NULL,
+        },
+        {
+                .name = "close_all",
+                .section = "global",
+                .description = "Shortcut for closing all notifications",
+                .type = TYPE_STRING,
+                .default_value = "none",
+                .value = &settings.close_all_ks.str,
+                .parser = NULL,
+                .parser_data = NULL,
+        },
+        {
+                .name = "history",
+                .section = "global",
+                .description = "Shortcut to pop the last notification from history",
+                .type = TYPE_STRING,
+                .default_value = "none",
+                .value = &settings.history_ks.str,
+                .parser = NULL,
+                .parser_data = NULL,
+        },
+        {
+                .name = "context",
+                .section = "global",
+                .description = "Shortcut for context menu",
+                .type = TYPE_STRING,
+                .default_value = "none",
+                .value = &settings.context_ks.str,
+                .parser = NULL,
+                .parser_data = NULL,
+        },
+        {
+                .name = "gap_size",
+                .section = "global",
+                .description = "Size of gap between notifications",
+                .type = TYPE_INT,
+                .default_value = "0",
+                .value = &settings.gap_size,
+                .parser = NULL,
+                .parser_data = NULL,
+        },
 };
 #endif
 /* vim: set ft=c tabstop=8 shiftwidth=8 expandtab textwidth=0: */

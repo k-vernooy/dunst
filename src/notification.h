@@ -11,6 +11,13 @@
 
 #define DUNST_NOTIF_MAX_CHARS 50000
 
+enum icon_position {
+        ICON_LEFT,
+        ICON_RIGHT,
+        ICON_TOP,
+        ICON_OFF
+};
+
 enum behavior_fullscreen {
         FS_NULL,      //!< Invalid value
         FS_DELAY,     //!< Delay the notification until leaving fullscreen mode
@@ -57,12 +64,17 @@ struct notification {
                                    Use this to compare the icon name with rules. May also be modified by rules.*/
         char *icon_path;         /**< Full path to the notification's icon. */
         char *default_icon_name; /**< The icon that is used when no other icon is available. */
-        int icon_size;           /**< Size of the icon used for searching the right icon. */
+        int min_icon_size;  /**< Minimum icon size. Also used for looking up icon names. */
+        int max_icon_size; /**< Maximum icon size. */
+        enum icon_position icon_position;       /**< Icon position (enum left,right,top,off). */
+        bool receiving_raw_icon; /**< Still waiting for raw icon to be received */
 
         gint64 start;      /**< begin of current display (in milliseconds) */
         gint64 timestamp;  /**< arrival time (in milliseconds) */
         gint64 timeout;    /**< time to display (in milliseconds) */
+        gint64 dbus_timeout; /**< time to display (in milliseconds) (set by dbus) */
         int locked;     /**< If non-zero the notification is locked **/
+        PangoAlignment progress_bar_alignment; /**< Horizontal alignment of the progress bar **/
 
         GHashTable *actions;
         char *default_action_name; /**< The name of the action to be invoked on do_action */
@@ -92,6 +104,7 @@ struct notification {
         bool word_wrap;
         PangoEllipsizeMode ellipsize;
         PangoAlignment alignment;
+        bool hide_text;
 
         /* derived fields */
         char *msg;            /**< formatted message */

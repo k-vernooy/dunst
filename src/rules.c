@@ -5,6 +5,7 @@
 #include <fnmatch.h>
 #include <glib.h>
 #include <stddef.h>
+#include <regex.h>
 
 #include "dunst.h"
 #include "utils.h"
@@ -20,6 +21,8 @@ void rule_apply(struct rule *r, struct notification *n)
 {
         if (r->timeout != -1)
                 n->timeout = r->timeout;
+        if (r->override_dbus_timeout != -1)
+                n->dbus_timeout = r->override_dbus_timeout;
         if (r->urgency != URG_NONE)
                 n->urgency = r->urgency;
         if (r->fullscreen != FS_NULL)
@@ -36,6 +39,14 @@ void rule_apply(struct rule *r, struct notification *n)
                 n->ellipsize = r->ellipsize;
         if (r->alignment != -1)
                 n->alignment = r->alignment;
+        if (r->hide_text != -1)
+                n->hide_text = r->hide_text;
+        if (r->progress_bar_alignment != -1)
+                n->progress_bar_alignment = r->progress_bar_alignment;
+        if (r->min_icon_size != -1)
+                n->min_icon_size = r->min_icon_size;
+        if (r->max_icon_size != -1)
+                n->max_icon_size = r->max_icon_size;
         if (r->action_name) {
                 g_free(n->default_action_name);
                 n->default_action_name = g_strdup(r->action_name);
@@ -46,8 +57,8 @@ void rule_apply(struct rule *r, struct notification *n)
         }
         if (r->markup != MARKUP_NULL)
                 n->markup = r->markup;
-        if (r->set_icon_size > 0)
-                n->icon_size = r->set_icon_size;
+        if (r->icon_position != -1)
+                n->icon_position = r->icon_position;
         if (r->fg) {
                 g_free(n->colors.fg);
                 n->colors.fg = g_strdup(r->fg);
@@ -71,8 +82,12 @@ void rule_apply(struct rule *r, struct notification *n)
                 n->default_icon_name = g_strdup(r->default_icon);
         }
         if (r->new_icon) {
-                g_free(n->iconname);
-                n->iconname = g_strdup(r->new_icon);
+                // FIXME This is not efficient when the icon is replaced
+                // multiple times for the same notification. To fix this, a
+                // separate variable is needed to track if the icon is
+                // replaced, like in 86cbc1d34bb0f551461dbd466cd9e4860ae01817.
+                notification_icon_replace_path(n, r->new_icon);
+                n->receiving_raw_icon = false;
         }
         if (r->script){
                 n->scripts = g_renew(const char*,n->scripts,n->script_count + 1);
@@ -140,7 +155,37 @@ struct rule *rule_new(const char *name)
 
 static inline bool rule_field_matches_string(const char *value, const char *pattern)
 {
-        return !pattern || (value && !fnmatch(pattern, value, 0));
+        if (settings.enable_regex) {
+                if (!pattern) {
+                        return true;
+                }
+                if (!value) {
+                        return false;
+                }
+                regex_t     regex;
+
+                // TODO compile each regex only once
+                int err = regcomp(&regex, pattern, REG_NEWLINE | REG_EXTENDED | REG_NOSUB);
+                if (err) {
+                        size_t err_size = regerror(err, &regex, NULL, 0);
+                        char *err_buf = malloc(err_size);
+                        regerror(err, &regex, err_buf, err_size);
+                        LOG_W("%s: \"%s\"", err_buf, pattern);
+                        free(err_buf);
+                        return false;
+                }
+
+                for (int i = 0; ; i++) {
+                        if (regexec(&regex, value, 0, NULL, 0))
+                                break;
+                        regfree(&regex);
+                        return true;
+                }
+                regfree(&regex);
+                return false;
+        } else {
+                return !pattern || (value && !fnmatch(pattern, value, 0));
+        }
 }
 
 /*
@@ -150,6 +195,7 @@ bool rule_matches_notification(struct rule *r, struct notification *n)
 {
         return  r->enabled
                 && (r->msg_urgency == URG_NONE || r->msg_urgency == n->urgency)
+                && (r->match_dbus_timeout < 0 || (r->match_dbus_timeout == n->dbus_timeout))
                 && (r->match_transient == -1 || (r->match_transient == n->transient))
                 && rule_field_matches_string(n->appname,        r->appname)
                 && rule_field_matches_string(n->desktop_entry,  r->desktop_entry)
